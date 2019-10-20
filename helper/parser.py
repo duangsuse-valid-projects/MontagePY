@@ -102,7 +102,7 @@ class Func:
 
 def Try(op, err=lambda e: lambda c: False, ok=lambda r: lambda c: c(r), exc=Exception):
   try: return Func.delazy1(ok, op())
-  except exc: return Func.delazy1(err, exc)
+  except exc as ex: return Func.delazy1(err, ex)
 def cast(ty, x, checkf=lambda ty, x: type(x) is ty, castf=lambda ty, x: ty(x)):
   return x if checkf(ty,x) else castf(ty,x)
 
