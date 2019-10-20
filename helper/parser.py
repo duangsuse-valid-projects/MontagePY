@@ -90,7 +90,7 @@ class PsP:
   matchedq = lambda r: len(r) == 2
   @staticmethod
   def also(obj, x, op): op(obj, x); return obj
-  listfold = lambda l, x: PsP.also(l, x, lambda lst, o: lst.append(o))
+  listfold = lambda l, x: PsP.also(l, x, lambda lst, t: lst.append(t[1]))
   Infinity = float('inf')
   answer = lambda pr, x: PsP.Matched(Func.delazy(x)) if pr else PsP.Unmatched
 
@@ -188,7 +188,7 @@ class ParserStream (MarkReset):
 class ParserKst:
   LstFold = (list(), PsP.listfold)
   CntFold = (0, lambda ac, _: ac+1)
-  LenFold = (0, lambda ac, x: ac+len(x))
+  LenFold = (0, lambda ac, t: ac+len(t[1]))
   @staticmethod
   def HistFoldl(d, obj, cntf=lambda x: 1, initialf=lambda x: 0, mapf=lambda t: t[1]):
     x = mapf(obj)
