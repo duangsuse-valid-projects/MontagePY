@@ -34,6 +34,19 @@ class Averager(Fold):
   def finish(self):
     return self.n / self.k
 
+def averageColor(img, keyc) -> Tuple[tuple, int]:
+  def dist(a, b): return abs(a - b) #< color distance
+  averager = MapFold(Averager, Image.getmodebands(img.mode))
+  n_thres = 0
+  for y in range(0, img.height):
+    for x in range(0, img.width):
+      rgb = img.getpixel((x, y))
+      averager.accept(rgb)
+      dists = map(lambda ab: dist(ab[0], ab[1]), zip(keyc.color, rgb) )
+      if sum(dists) > keyc.thres: n_thres += 1
+  return (averager.finish(), n_thres)
+
+
 class MontageConfig:
   def __init__(self, font, font_size, font_color, color_mode, spacing, drawcolor_not):
     self.font, self.font_size, self.font_color = font, font_size, font_color
@@ -62,43 +75,43 @@ def getAvgColor(section, keyc) -> Tuple[tuple, bool]:
   (avgc, n_thres) = averageColor(section, keyc)
   return map(int, avgc), keyc.take(n_thres, pcounts)
 
-text = u"T"
-image = Image.open("pic.jpg")
-
 font = ImageFont.load_default()
-keyc = KeyColor(rgbColorFrom("#FFFFFF"), 10, lambda a, b: a > b * 0.5)
 cfg = MontageConfig(font, 10, None, "RGB", (2,2), lambda it: getAvgColor(it, keyc) )
+keyc = KeyColor(rgbColorFrom("#FFFFFF"), 10, lambda a, b: a > b * 0.5)
+
+text = u"EmmM"
+image = Image.open("pic.jpg")
 
 scale = 1.0
 new_coord = (it*scale for it in (image.width, image.height))
 ims = image.resize(new_coord, Image.ANTIALIAS)
 ims = ims.convert("RGB")
-(sp_h, sp_v) = cfg.spaceing
-secWidth = int((sp_h + cfg.font_size)*scale)
-secHeight = int((sp_v + cfg.font_size)*scale)
-secRows = int(ims.height / secHeight)
-secCols = int(ims.width / secWidth)
-leftPadding = int((ims.width - secCols * secWidth) / 2) + int(sp_h / 2)
-upPadding = int((ims.height - secRows * secHeight) / 2) + int(sp_v / 2)
-im = Image.new("RGB", (ims.width, ims.height), keyc.color)
+
+(width, height) = (ims.width, ims.height)
+(h_sp, v_sp) = cfg.spaceing
+
+(w_item, h_item) = (int((cfg.font_size+sp)*scale) for sp in (h_sp, v_sp) )
+padLeft = int((width % w_item + h_sp) /2)
+padTop = int((height % h_item + v_sp) /2)
+
+im = Image.new("RGB", (width, height), keyc.color)
 draw = ImageDraw.Draw(im)
 
 from itertools import cycle
 chars = cycle(text)
-texty = upPadding
 print(f"Generating... image size: {ims.width}x{ims.height}")
-for i in range(0, secRows):
-    textx = leftPadding
-    for j in range(0, secCols):
-        tempsec = ims.crop((textx, texty, textx + secWidth, texty + secHeight))
-        textx = textx + secWidth
-        avgc, is_draw = getAvgColor(tempsec, keyc)
-        if not is_draw: continue
-        if cfg.font_color != None:
-            draw.text((textx, texty), next(chars), font=font, fill=cfg.font_color)
-        else:
-            draw.text((textx, texty), next(chars), font=font, fill=rgbColorBack(avgc))
-    texty = texty + secHeight
+
+def divisibleRange(start, stop, step):
+  return range(start, stop - (stop%step), step)
+
+cfg.font_color = rgbColorBack(cfg.font_color) if cfg.font_color != None else None
+for y in divisibleRange(padTop, height, h_item):
+  for x in divisibleRange(padLeft, width, w_item):
+    area = (x, y, x+w_item, y+h_item)
+    shadow = image.crop(area)
+    avgc, is_draw = getAvgColor(shadow, keyc)
+    if is_draw:
+      draw.text(area[0:2], next(chars), font=font, fill = cfg.font_color or rgbColorBack(avgc))
 
 print("Finished!")
 im.show()
