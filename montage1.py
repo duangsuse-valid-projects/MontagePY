@@ -37,6 +37,9 @@ def imagePixels(img):
     for x in range(0, img.width):
       yield img.getpixel((x, y))
 
+def divsibleRange(start, stop, step):
+  return range(start, stop - (stop%step), step)
+
 class Reducer:
   def __init__(self): pass
   def accept(self, value): pass
@@ -71,16 +74,16 @@ apg.add_argument("images", nargs="+", type=FileNameType("r"), help="images to ge
 
 apg1 = app.add_argument_group("background key color")
 apg1.add_argument("-key-color", type=str, default="#FFFFFF", help="key color for new bitmap")
-apg1.add_argument("--key-thres", type=int, default=10, help="color fuzzy match(sum all channels) threshold")
+apg1.add_argument("--key-thres", type=int, default=20, help="color fuzzy match(sum all channels) threshold")
 apg1.add_argument("--key-ratio", type=float, default=0.5, help=">percentage, for key-color chunk being not drawn")
 
 def solveItemLayout(img_size, item_size, scale, spacing):
   (width, height) = img_size
-  (w_item, h_item) = tuple(item_size+sp for sp in spacing)
+  (w_item, h_item) = tuple(int((item_size+sp)*scale) for sp in spacing)
   (padLeft, padTop) = tuple(int(v * scale / 2) for v in [(width % w_item), (height % h_item)])
 
-  for y in range(padTop, height, h_item):
-    for x in range(padLeft, width, w_item):
+  for y in divsibleRange(padTop, height, h_item):
+    for x in divsibleRange(padLeft, width, w_item):
       yield (x, y, x+w_item, y+h_item)
 
 def drawTextMontage(src_img, dst_img, areas, seq, font, calc_draw_color):
