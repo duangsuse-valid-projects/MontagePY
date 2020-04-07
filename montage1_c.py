@@ -35,9 +35,14 @@ def drawTextMontage(img, areas, seq, font, calc_draw_color):
     if drawc != None:
       draw.text((x, y), next(seq), font=font, fill=(drawc))
 
+# util funcs
 def isColorNearTo(key_color, key_thres, color):
   diff = map(lambda c: abs(c[0] - c[1]), zip(color, key_color) )
   return sum(diff) < key_thres
+
+def mapUMatWithPillow(mat:UMat, transform) -> UMat:
+  img = Image.fromarray(array(mat))
+  return UMat(array(transform(img)))
 
 def expandSrts(srts, fps, count, placeholder="#"):
   indexed = [placeholder for _ in range(count)]
@@ -46,6 +51,10 @@ def expandSrts(srts, fps, count, placeholder="#"):
     start, end = no(srt.start), no(srt.end)
     indexed[start:end] = repeat(srt.content, end - start)
   return indexed
+
+def cv2VideoInfo(cap):
+  props = [cv2.CAP_PROP_FPS, cv2.CAP_PROP_FRAME_COUNT, cv2.CAP_PROP_FRAME_WIDTH, cv2.CAP_PROP_FRAME_HEIGHT]
+  return tuple(int(cap.get(p)) for p in props)
 
 # font, font_size, scale, spacing; key_color
 class Montage:
@@ -66,27 +75,15 @@ class Montage:
     drawTextMontage(newImage, areas, cycle(self.text), self.font, self.calc_draw_color)
     return newImage
 
-def mapUMatWithPillow(mat:UMat, transform) -> UMat:
-  img = Image.fromarray(array(mat))
-  return UMat(array(transform(img)))
-
-def fileExtNameSplit(path):
-  extIndex = path.rfind('.')
-  return (path[:extIndex], path[extIndex+1:])
-
-def cv2VideoInfo(cap):
-  props = [cv2.CAP_PROP_FPS, cv2.CAP_PROP_FRAME_COUNT, cv2.CAP_PROP_FRAME_WIDTH, cv2.CAP_PROP_FRAME_HEIGHT]
-  return tuple(int(cap.get(p)) for p in props)
-
+from time import time, strftime
 
 def playCvMontage(cap, mon, title="Montage", filename="mon.avi", subtitle=None):
-  (fps, count, width, height) = cv2VideoInfo(cap)
-  print(f"{fps}fps*{count} {width}x{height}")
-  vid = VideoWriter(filename, VideoWriter.fourcc(*"MJPG"), fps, tuple(int(sz*mon.scale) for sz in (width,height)))
-
+  (fps, count, _, _) = cv2VideoInfo(cap)
+  vid = VideoWriter(filename, VideoWriter.fourcc(*"FMP4"), fps, mon.newSize)
   ary = expandSrts(subtitle, fps, count) if subtitle != None else None
 
   cv2.namedWindow(title, cv2.WINDOW_AUTOSIZE)
+  begin_time = time()
   index = 0
   unfinished, img = cap.read()
   while unfinished:
@@ -100,26 +97,38 @@ def playCvMontage(cap, mon, title="Montage", filename="mon.avi", subtitle=None):
 
     key = chr(cv2.waitKey(1) & 0xFF)
     if key == 'q': break
-    elif key == 'p': print(index)
+    elif key == 'p':
+      duration = time() - begin_time
+      print("%i time=%.3fs %.3ffps" %(index, duration, index/duration) )
     unfinished, img = cap.read()
     index += 1
   vid.release()
 
 
 from argparse import FileType
+
+def fileExtNameSplit(path):
+  extIndex = path.rfind('.')
+  return (path[:extIndex], path[extIndex+1:])
+
 def main(args):
   apg1.add_argument("--subtitle", type=FileType("r"), help="subtitle file for -text")
   readSrt = lambda it: srt.parse(it.read())
+
   cfg = app.parse_args(args)
   cfg.font = ImageFont.truetype(cfg.font, cfg.font_size) if cfg.font != None else ImageFont.load_default()
   cfg.key_color = colorFromHtml(cfg.key_color)
+
   print(f"{cfg.font_size}px, {cfg.key_color} ±{cfg.key_thres} {cfg.spacing}")
   cfg.calc_draw_color = lambda c: None if isColorNearTo(cfg.key_color, cfg.key_thres, c) else c
   for path in cfg.images:
     (name, ext) = fileExtNameSplit(path)
     if ext in "mp4 webm mkv".split(" "):
       cap = VideoCapture(path)
-      mon = Montage(cfg, cv2VideoInfo(cap)[2:] )
+      (fps, count, width, height) = cv2VideoInfo(cap)
+      print(f"{fps}fps*{count} {width}x{height}")
+
+      mon = Montage(cfg, (width, height) )
       playCvMontage(cap, mon, filename=f"{name}_mon.avi", subtitle=let(readSrt, cfg.subtitle))
       cap.release()
     else:
