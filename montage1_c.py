@@ -29,9 +29,24 @@ def drawTextMontage(img, areas, seq, font, calc_draw_color):
     if drawc != None:
       draw.text((x, y), next(seq), font=font, fill=colorBackHtml(drawc))
 
+
 def isColorNearTo(key_color, key_thres, color):
   diff = map(lambda c: abs(c[0] - c[1]), zip(color, key_color) )
   return sum(diff) < key_thres
+
+def pillowCvify(transform, *args, **kwargs):
+  def invoke(mat: UMat) -> UMat:
+    img = Image.fromarray(array(mat))
+    return UMat(array(transform(img, *args, **kwargs)))
+  return invoke
+
+def fileExtNameSplit(path):
+  extIndex = path.rfind('.')
+  return (path[:extIndex], path[extIndex+1:])
+
+def cv2VideoInfo(cap):
+  props = [cv2.CAP_PROP_FPS, cv2.CAP_PROP_FRAME_WIDTH, cv2.CAP_PROP_FRAME_HEIGHT]
+  return tuple(int(cap.get(p)) for p in props)
 
 # font, font_size, scale, spacing; key_color
 def montage(image, cfg, calc_draw_color):
@@ -42,39 +57,16 @@ def montage(image, cfg, calc_draw_color):
   drawTextMontage(newImage, areas, cycle(cfg.text), cfg.font, calc_draw_color)
   return newImage
 
-def cvMontage(mat, cfg, calc_draw_color) -> UMat:
-  img = Image.fromarray(array(mat))
-  return UMat(array(montage(img, cfg, calc_draw_color)))
-
-def zipWithNext(xs: list):
-  require(len(xs) % 2, lambda it: it == 0, "list not paired, rest ")
-  for i in range(1, len(xs), 2):
-    yield (xs[i-1], xs[i])
-
-def expandRangeStarts(starts, n):
-  indexed = list(range(n))
-  def assign(start, stop, value):
-    nonlocal indexed
-    for i in range(start, stop): indexed[i] = value
-  sorted_starts = sorted(starts, key=lambda it: it[0])
-  for (a, b) in zipWithNext(sorted_starts):
-    assign(a[0], b[0], a[1])
-  (last, last_value) = sorted_starts[-1]
-  assign(last, n, last_value)
-
-def fileExtNameSplit(path):
-  extIndex = path.rfind('.')
-  return (path[:extIndex], path[extIndex+1:])
-
 def playCvMontage(cap, cfg, calc_draw_color, title="Montage", filename="mon.avi"):
   (fps, width, height) = cv2VideoInfo(cap)
   print(f"{fps} {width}x{height}")
   vid = VideoWriter(filename, VideoWriter.fourcc(*"FMP4"), fps, (width,height))
+  cvMontage = pillowCvify(montage, cfg, calc_draw_color)
 
   cv2.namedWindow(title, cv2.WINDOW_AUTOSIZE)
   unfinished, img = cap.read()
   while unfinished:
-    mon = cvMontage(img, cfg, calc_draw_color)
+    mon = cvMontage(img)
     cv2.imshow(title, mon)
     vid.write(mon)
     key = chr(cv2.waitKey(1) & 0xFF)
@@ -82,9 +74,6 @@ def playCvMontage(cap, cfg, calc_draw_color, title="Montage", filename="mon.avi"
     unfinished, img = cap.read()
   vid.release()
 
-def cv2VideoInfo(cap):
-  props = [cv2.CAP_PROP_FPS, cv2.CAP_PROP_FRAME_WIDTH, cv2.CAP_PROP_FRAME_HEIGHT]
-  return tuple(int(cap.get(p)) for p in props)
 
 def main(args):
   cfg = app.parse_args(args)
