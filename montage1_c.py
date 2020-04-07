@@ -19,7 +19,7 @@ def solveItemColorLayout(img, item_size, scale, spacing):
 
   for i in range(0, n_item):
     for j in range(0, m_item):
-      (y, x) = (i*h_item, j*w_item)
+      (y, x) = (padTop+ i*h_item, padLeft+ j*w_item)
       yield (x, y, img_average.getpixel((j, i)) )
 
 def drawTextMontage(img, areas, seq, font, calc_draw_color):
@@ -42,9 +42,9 @@ def montage(image, cfg, calc_draw_color):
   drawTextMontage(newImage, areas, cycle(cfg.text), cfg.font, calc_draw_color)
   return newImage
 
-def cvMontage(mat, cfg, calc_draw_color) -> array:
+def cvMontage(mat, cfg, calc_draw_color) -> UMat:
   img = Image.fromarray(array(mat))
-  return array(montage(img, cfg, calc_draw_color))
+  return UMat(array(montage(img, cfg, calc_draw_color)))
 
 def zipWithNext(xs: list):
   require(len(xs) % 2, lambda it: it == 0, "list not paired, rest ")
@@ -69,7 +69,7 @@ def fileExtNameSplit(path):
 def playCvMontage(cap, cfg, calc_draw_color, title="Montage", filename="mon.avi"):
   (fps, width, height) = cv2VideoInfo(cap)
   print(f"{fps} {width}x{height}")
-  vid = VideoWriter(filename, VideoWriter.fourcc(*"MJPG"), fps, (width,height))
+  vid = VideoWriter(filename, VideoWriter.fourcc(*"FMP4"), fps, (width,height))
 
   cv2.namedWindow(title, cv2.WINDOW_AUTOSIZE)
   unfinished, img = cap.read()
