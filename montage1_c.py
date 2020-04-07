@@ -6,16 +6,16 @@ from PIL import Image, ImageDraw, ImageFont
 from cv2 import UMat, VideoCapture, VideoWriter
 import cv2
 
-from srt import Subtitle, parse
+import srt
 
-from itertools import cycle
+from itertools import cycle, repeat
 from montage1 import *
 
 def solveItemLayout(size, item_size, scale, spacing):
   (width, height) = size
   (w_item, h_item) = tuple((sz+sp)*scale for (sz, sp) in zip(item_size, spacing))
   (m_item, n_item) = tuple(int(v) for v in [width / w_item, height / h_item])
-  (padLeft, padTop) = tuple(int(sz*scale / 2) for sz in [(width % w_item), (height % h_item)])
+  (padLeft, padTop) = tuple(int(sz*scale / 4) for sz in [(width % w_item), (height % h_item)])
   return (w_item, h_item, m_item, n_item, padLeft, padTop)
 
 def solveItemColors(img, layout):
@@ -25,7 +25,7 @@ def solveItemColors(img, layout):
 
   for i in range(0, n_item):
     for j in range(0, m_item):
-      (y, x) = (padTop+ i*h_item, padLeft+ j*w_item)
+      (y, x) = (padTop + i*h_item, padLeft + j*w_item)
       yield (x, y, img_average.getpixel((j, i)) )
 
 def drawTextMontage(img, areas, seq, font, calc_draw_color):
@@ -33,57 +33,83 @@ def drawTextMontage(img, areas, seq, font, calc_draw_color):
   for (x, y, color) in areas:
     drawc = calc_draw_color(color)
     if drawc != None:
-      draw.text((x, y), next(seq), font=font, fill=colorBackHtml(drawc))
-
-# font, font_size, scale, spacing; key_color
-def montage(image, cfg):
-  newSize = tuple(int(d*cfg.scale) for d in image.size)
-  scaledImage = image.resize(newSize, Image.BICUBIC) if cfg.scale != 1.0 else image
-  layout = solveItemLayout(newSize, cfg.font.getsize(cfg.text[0]), cfg.scale, cfg.spacing)
-  areas = solveItemColors(scaledImage, layout)
-  newImage = Image.new(image.mode, newSize, cfg.key_color)
-  drawTextMontage(newImage, areas, cycle(cfg.text), cfg.font, cfg.calc_draw_color)
-  return newImage
-
+      draw.text((x, y), next(seq), font=font, fill=(drawc))
 
 def isColorNearTo(key_color, key_thres, color):
   diff = map(lambda c: abs(c[0] - c[1]), zip(color, key_color) )
   return sum(diff) < key_thres
 
-def pillowCvify(transform, *args, **kwargs):
-  def invoke(mat: UMat) -> UMat:
-    img = Image.fromarray(array(mat))
-    return UMat(array(transform(img, *args, **kwargs)))
-  return invoke
+def expandSrts(srts, fps, count, placeholder="#"):
+  indexed = [placeholder for _ in range(count)]
+  no = lambda t: int(t.total_seconds() * fps)
+  for srt in srts:
+    start, end = no(srt.start), no(srt.end)
+    indexed[start:end] = repeat(srt.content, end - start)
+  return indexed
+
+# font, font_size, scale, spacing; key_color
+class Montage:
+  def __init__(self, cfg, size):
+    self.font = cfg.font; self.scale = cfg.scale; self.spacing = cfg.spacing
+    self.text = cfg.text
+    self.key_color = cfg.key_color; self.calc_draw_color = cfg.calc_draw_color
+
+    self.newSize = tuple(int(sz*cfg.scale) for sz in size)
+    self.refreshLayout()
+  def refreshLayout(self):
+    if len(self.text) == 0: return
+    self.layout = solveItemLayout(self.newSize, self.font.getsize(self.text[0]), self.scale, self.spacing)
+
+  def runOn(self, image):
+    areas = solveItemColors(image, self.layout)
+    newImage = Image.new(image.mode, self.newSize, self.key_color)
+    drawTextMontage(newImage, areas, cycle(self.text), self.font, self.calc_draw_color)
+    return newImage
+
+def mapUMatWithPillow(mat:UMat, transform) -> UMat:
+  img = Image.fromarray(array(mat))
+  return UMat(array(transform(img)))
 
 def fileExtNameSplit(path):
   extIndex = path.rfind('.')
   return (path[:extIndex], path[extIndex+1:])
 
 def cv2VideoInfo(cap):
-  props = [cv2.CAP_PROP_FPS, cv2.CAP_PROP_FRAME_WIDTH, cv2.CAP_PROP_FRAME_HEIGHT]
+  props = [cv2.CAP_PROP_FPS, cv2.CAP_PROP_FRAME_COUNT, cv2.CAP_PROP_FRAME_WIDTH, cv2.CAP_PROP_FRAME_HEIGHT]
   return tuple(int(cap.get(p)) for p in props)
 
 
-def playCvMontage(cap, cfg, title="Montage", filename="mon.avi"):
-  (fps, width, height) = cv2VideoInfo(cap)
-  print(f"{fps} {width}x{height}")
-  vid = VideoWriter(filename, VideoWriter.fourcc(*"FMP4"), fps, (width,height))
-  cvMontage = pillowCvify(montage, cfg)
+def playCvMontage(cap, mon, title="Montage", filename="mon.avi", subtitle=None):
+  (fps, count, width, height) = cv2VideoInfo(cap)
+  print(f"{fps}fps*{count} {width}x{height}")
+  vid = VideoWriter(filename, VideoWriter.fourcc(*"MJPG"), fps, tuple(int(sz*mon.scale) for sz in (width,height)))
+
+  ary = expandSrts(subtitle, fps, count) if subtitle != None else None
 
   cv2.namedWindow(title, cv2.WINDOW_AUTOSIZE)
+  index = 0
   unfinished, img = cap.read()
   while unfinished:
-    mon = cvMontage(img)
-    cv2.imshow(title, mon)
-    vid.write(mon)
+    if subtitle != None:
+      text0 = mon.text
+      mon.text = ary[index]
+      if mon.text != text0: mon.refreshLayout()
+    mon_img = mapUMatWithPillow(img, mon.runOn)
+    cv2.imshow(title, mon_img)
+    vid.write(mon_img)
+
     key = chr(cv2.waitKey(1) & 0xFF)
     if key == 'q': break
+    elif key == 'p': print(index)
     unfinished, img = cap.read()
+    index += 1
   vid.release()
 
 
+from argparse import FileType
 def main(args):
+  apg1.add_argument("--subtitle", type=FileType("r"), help="subtitle file for -text")
+  readSrt = lambda it: srt.parse(it.read())
   cfg = app.parse_args(args)
   cfg.font = ImageFont.truetype(cfg.font, cfg.font_size) if cfg.font != None else ImageFont.load_default()
   cfg.key_color = colorFromHtml(cfg.key_color)
@@ -93,11 +119,13 @@ def main(args):
     (name, ext) = fileExtNameSplit(path)
     if ext in "mp4 webm mkv".split(" "):
       cap = VideoCapture(path)
-      playCvMontage(cap, cfg, filename=f"{name}_mon.avi")
+      mon = Montage(cfg, cv2VideoInfo(cap)[2:] )
+      playCvMontage(cap, mon, filename=f"{name}_mon.avi", subtitle=let(readSrt, cfg.subtitle))
       cap.release()
     else:
       image = Image.open(path)
-      montage(image, cfg).save(f"{name}_mon.png")
+      mon = Montage(cfg, image.size)
+      mon.runOn(image).save(f"{name}_mon.png")
 
 from sys import argv
 if __name__ == "__main__": main(argv[1:])
