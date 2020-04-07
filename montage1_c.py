@@ -6,15 +6,21 @@ from PIL import Image, ImageDraw, ImageFont
 from cv2 import UMat, VideoCapture, VideoWriter
 import cv2
 
+from srt import Subtitle, parse
+
 from itertools import cycle
 from montage1 import *
 
-def solveItemColorLayout(img, item_size, scale, spacing):
-  (width, height) = img.size
-  (w_item, h_item) = tuple(int((item_size+sp)*scale) for sp in spacing)
+def solveItemLayout(size, item_size, scale, spacing):
+  (width, height) = size
+  (w_item, h_item) = tuple((sz+sp)*scale for (sz, sp) in zip(item_size, spacing))
   (m_item, n_item) = tuple(int(v) for v in [width / w_item, height / h_item])
-  (padLeft, padTop) = tuple(int(v*scale / 2) for v in [(width % w_item), (height % h_item)])
+  (padLeft, padTop) = tuple(int(sz*scale / 2) for sz in [(width % w_item), (height % h_item)])
+  return (w_item, h_item, m_item, n_item, padLeft, padTop)
 
+def solveItemColors(img, layout):
+  (width, height) = img.size
+  (w_item, h_item, m_item, n_item, padLeft, padTop) = layout
   img_average = img.resize((m_item, n_item), Image.BICUBIC, box=(padLeft, padTop, img.width-padLeft, img.height-padTop))
 
   for i in range(0, n_item):
@@ -28,6 +34,16 @@ def drawTextMontage(img, areas, seq, font, calc_draw_color):
     drawc = calc_draw_color(color)
     if drawc != None:
       draw.text((x, y), next(seq), font=font, fill=colorBackHtml(drawc))
+
+# font, font_size, scale, spacing; key_color
+def montage(image, cfg):
+  newSize = tuple(int(d*cfg.scale) for d in image.size)
+  scaledImage = image.resize(newSize, Image.BICUBIC) if cfg.scale != 1.0 else image
+  layout = solveItemLayout(newSize, cfg.font.getsize(cfg.text[0]), cfg.scale, cfg.spacing)
+  areas = solveItemColors(scaledImage, layout)
+  newImage = Image.new(image.mode, newSize, cfg.key_color)
+  drawTextMontage(newImage, areas, cycle(cfg.text), cfg.font, cfg.calc_draw_color)
+  return newImage
 
 
 def isColorNearTo(key_color, key_thres, color):
@@ -48,20 +64,12 @@ def cv2VideoInfo(cap):
   props = [cv2.CAP_PROP_FPS, cv2.CAP_PROP_FRAME_WIDTH, cv2.CAP_PROP_FRAME_HEIGHT]
   return tuple(int(cap.get(p)) for p in props)
 
-# font, font_size, scale, spacing; key_color
-def montage(image, cfg, calc_draw_color):
-  newSize = tuple(int(d*cfg.scale) for d in image.size)
-  scaledImage = image.resize(newSize, Image.ANTIALIAS) if cfg.scale != 1.0 else image
-  newImage = Image.new(image.mode, newSize, cfg.key_color)
-  areas = solveItemColorLayout(scaledImage, cfg.font_size, cfg.scale, cfg.spacing)
-  drawTextMontage(newImage, areas, cycle(cfg.text), cfg.font, calc_draw_color)
-  return newImage
 
-def playCvMontage(cap, cfg, calc_draw_color, title="Montage", filename="mon.avi"):
+def playCvMontage(cap, cfg, title="Montage", filename="mon.avi"):
   (fps, width, height) = cv2VideoInfo(cap)
   print(f"{fps} {width}x{height}")
   vid = VideoWriter(filename, VideoWriter.fourcc(*"FMP4"), fps, (width,height))
-  cvMontage = pillowCvify(montage, cfg, calc_draw_color)
+  cvMontage = pillowCvify(montage, cfg)
 
   cv2.namedWindow(title, cv2.WINDOW_AUTOSIZE)
   unfinished, img = cap.read()
@@ -80,16 +88,16 @@ def main(args):
   cfg.font = ImageFont.truetype(cfg.font, cfg.font_size) if cfg.font != None else ImageFont.load_default()
   cfg.key_color = colorFromHtml(cfg.key_color)
   print(f"{cfg.font_size}px, {cfg.key_color} ±{cfg.key_thres} {cfg.spacing}")
-  calc_draw_color = lambda c: None if isColorNearTo(cfg.key_color, cfg.key_thres, c) else c
+  cfg.calc_draw_color = lambda c: None if isColorNearTo(cfg.key_color, cfg.key_thres, c) else c
   for path in cfg.images:
     (name, ext) = fileExtNameSplit(path)
     if ext in "mp4 webm mkv".split(" "):
       cap = VideoCapture(path)
-      playCvMontage(cap, cfg, calc_draw_color, filename=f"{name}_mon.avi")
+      playCvMontage(cap, cfg, filename=f"{name}_mon.avi")
       cap.release()
     else:
       image = Image.open(path)
-      montage(image, cfg, calc_draw_color).save(f"{name}_mon.png")
+      montage(image, cfg).save(f"{name}_mon.png")
 
 from sys import argv
 if __name__ == "__main__": main(argv[1:])
