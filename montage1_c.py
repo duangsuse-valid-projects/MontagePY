@@ -44,7 +44,7 @@ def mapUMatWithPillow(mat:UMat, transform) -> UMat:
   img = Image.fromarray(array(mat))
   return UMat(array(transform(img)))
 
-def expandSrts(srts, fps, count, placeholder="#"):
+def expandSrts(srts, fps, count, placeholder):
   indexed = [placeholder for _ in range(count)]
   no = lambda t: int(t.total_seconds() * fps)
   for srt in srts:
@@ -62,6 +62,7 @@ class Montage:
     self.font = cfg.font; self.scale = cfg.scale; self.spacing = cfg.spacing
     self.text = cfg.text
     self.key_color = cfg.key_color; self.calc_draw_color = cfg.calc_draw_color
+    self.back_color = let(colorFromHtml, cfg.mon_background)
 
     self.newSize = tuple(int(sz*cfg.scale) for sz in size)
     self.refreshLayout()
@@ -71,18 +72,18 @@ class Montage:
 
   def runOn(self, image):
     areas = solveItemColors(image, self.layout)
-    newImage = Image.new(image.mode, self.newSize, self.key_color)
+    newImage = Image.new(image.mode, self.newSize, self.back_color or self.key_color)
     drawTextMontage(newImage, areas, cycle(self.text), self.font, self.calc_draw_color)
     return newImage
 
 from time import time, strftime
 
-def playCvMontage(cap, mon, title="Montage", filename="mon.avi", subtitle=None):
+def playCvMontage(cap, mon, title="Montage", filename="mon.avi", subtitle=None, placeholder="#"):
   (fps, count, _, _) = cv2VideoInfo(cap)
   vid = VideoWriter(filename, VideoWriter.fourcc(*"FMP4"), fps, mon.newSize)
-  ary = expandSrts(subtitle, fps, count) if subtitle != None else None
+  ary = expandSrts(subtitle, fps, count, placeholder) if subtitle != None else None
 
-  cv2.namedWindow(title, cv2.WINDOW_AUTOSIZE)
+  cv2.namedWindow(title, cv2.WINDOW_NORMAL)
   begin_time = time()
   index = 0
   unfinished, img = cap.read()
@@ -113,6 +114,8 @@ def fileExtNameSplit(path):
 
 def main(args):
   apg1.add_argument("--subtitle", type=FileType("r"), help="subtitle file for -text")
+  apg1.add_argument("--subtitle-placeholder", type=str, default="#", help="placeholder for subtitle")
+  apg1.add_argument("--mon-background", type=str, default=None, help="replacement back-color for mon (default -key-color)")
   readSrt = lambda it: srt.parse(it.read())
 
   cfg = app.parse_args(args)
@@ -123,13 +126,13 @@ def main(args):
   cfg.calc_draw_color = lambda c: None if isColorNearTo(cfg.key_color, cfg.key_thres, c) else c
   for path in cfg.images:
     (name, ext) = fileExtNameSplit(path)
-    if ext in "mp4 webm mkv".split(" "):
+    if ext in "mp4 webm mkv flv".split(" "):
       cap = VideoCapture(path)
       (fps, count, width, height) = cv2VideoInfo(cap)
       print(f"{fps}fps*{count} {width}x{height}")
 
       mon = Montage(cfg, (width, height) )
-      playCvMontage(cap, mon, filename=f"{name}_mon.avi", subtitle=let(readSrt, cfg.subtitle))
+      playCvMontage(cap, mon, filename=f"{name}_mon.avi", subtitle=let(readSrt, cfg.subtitle), placeholder=cfg.subtitle_placeholder)
       cap.release()
     else:
       image = Image.open(path)

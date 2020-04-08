@@ -62,13 +62,15 @@ class MapFold(Reducer):
     return tuple(reducer.finish() for reducer in self.reducers)
 
 # == App ==
+CmdParamSpacing = RegexType(r":(\-?\d+),(\-?\d+)", lambda t: (int(t[0]), int(t[1])))
+
 app = ArgumentParser("montage", description="Draw montage pictures built from cycle char sequence, with font(size), scale, spacing")
 
 apg = app.add_argument_group("basic params")
 apg.add_argument("-font", type=FileNameType("r"), help="font path supported by Python Pillow library")
 apg.add_argument("-font-size", type=int, default=10, help="size of font (e.g. 14)")
 apg.add_argument("-scale", type=float, default=1.0, help="scale for input image")
-apg.add_argument("-spacing", metavar=":h,v", type=RegexType(r":(\-?\d+),(\-?\d+)", lambda t: (int(t[0]), int(t[1]))), default=(0,0), help="horizontal,vertical padding each item")
+apg.add_argument("-spacing", metavar=":h,v", type=CmdParamSpacing, default=(0,0), help="horizontal,vertical padding each item")
 apg.add_argument("-text", type=str, default="#", help="cycling montage text")
 apg.add_argument("images", nargs="+", type=FileNameType("r"), help="images to generate montage")
 
