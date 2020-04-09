@@ -53,8 +53,8 @@ def expandSrts(srts, fps, count, placeholder):
   return indexed
 
 def cv2VideoInfo(cap):
-  props = [cv2.CAP_PROP_FPS, cv2.CAP_PROP_FRAME_COUNT, cv2.CAP_PROP_FRAME_WIDTH, cv2.CAP_PROP_FRAME_HEIGHT]
-  return tuple(int(cap.get(p)) for p in props)
+  props = [cv2.CAP_PROP_FRAME_COUNT, cv2.CAP_PROP_FRAME_WIDTH, cv2.CAP_PROP_FRAME_HEIGHT]
+  return (cap.get(cv2.CAP_PROP_FPS),) + tuple(int(cap.get(p)) for p in props)
 
 # font, font_size, scale, spacing; key_color
 class Montage:

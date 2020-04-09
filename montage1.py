@@ -24,13 +24,16 @@ def require(value, predicate, message):
 def let(transform, self):
   return transform(self) if self != None else None
 
-def colorFromHtml(html):
+def _colorFromHtml(html):
   vpart = html.lstrip("#")
   require(len(vpart) % 2, lambda it: it == 0, "color value not correct")
   return tuple(int(vpart[i:i+2], 16) for i in range(0, len(vpart), 2))
-def colorBackHtml(color):
+def _colorBackHtml(color):
   vals = [hex(v)[2:].ljust(2,"0") for v in color]
   return "#"+ "".join(vals)
+
+def colorFromHtml(html): return tuple(reversed(_colorFromHtml(html)))
+def colorBackHtml(color): return _colorBackHtml(reversed(color))
 
 def imagePixels(img):
   for y in range(0, img.height):
